@@ -1,0 +1,128 @@
+# Builds "BC Level Caps.app" (mac-tool/): a Mac app with everything bundled (Python + TBCML, a Java
+# runtime, Android's aapt/zipalign/apksigner), so nothing has to be installed. The zips are attached to
+# the "mac-tool" release of this repository.
+name: Build BC Level Caps (Mac)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mac-tool/**", ".github/workflows/build-mac-tool.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: aarch64
+            jre_arch: aarch64
+            label: AppleSilicon
+          - runner: macos-15-intel
+            arch: x86_64
+            jre_arch: x64
+            label: Intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    env:
+      APP: "build/BC Level Caps.app"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Lay out the app
+        run: |
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp mac-tool/Info.plist "$APP/Contents/Info.plist"
+          cp mac-tool/launcher.sh "$APP/Contents/MacOS/BC Level Caps"
+          chmod +x "$APP/Contents/MacOS/BC Level Caps"
+          cp mac-tool/levelcap_app.py "$APP/Contents/Resources/"
+
+      - name: Bundle Python (standalone build) with TBCML
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest \
+            | python3 -c "import json,sys; a=[x['browser_download_url'] for x in json.load(sys.stdin)['assets'] if x['name'].startswith('cpython-3.12.') and x['name'].endswith('-${{ matrix.arch }}-apple-darwin-install_only.tar.gz')]; print(a[0])")
+          echo "Python: $url"
+          curl -fsSL "$url" | tar -xz -C "$APP/Contents/Resources"
+          PY="$APP/Contents/Resources/python/bin/python3"
+          "$PY" -m pip install --quiet --upgrade pip
+          "$PY" -m pip install --quiet tbcml flask
+          "$PY" -c "import tbcml, flask; print('TBCML', tbcml.__version__)"
+
+      - name: Bundle a Java runtime (Temurin 17)
+        run: |
+          set -e
+          mkdir -p jre-dl && curl -fsSL "https://api.adoptium.net/v3/binary/latest/17/ga/mac/${{ matrix.jre_arch }}/jre/hotspot/normal/eclipse" | tar -xz -C jre-dl
+          mv jre-dl/*/ "$APP/Contents/Resources/jre"
+          "$APP/Contents/Resources/jre/Contents/Home/bin/java" -version
+
+      - name: Bundle Android build tools (aapt, zipalign, apksigner)
+        run: |
+          set -e
+          url=$(curl -fsSL https://dl.google.com/android/repository/repository2-3.xml | python3 -c "
+          import sys, xml.etree.ElementTree as ET
+          root = ET.fromstring(sys.stdin.read())
+          best = None
+          for pkg in root.iter('remotePackage'):
+              path = pkg.get('path', '')
+              if not path.startswith('build-tools;') or '-rc' in path:
+                  continue
+              ver = tuple(int(x) for x in path.split(';')[1].split('.'))
+              for a in pkg.iter('archive'):
+                  if (a.findtext('host-os') or '') == 'macosx':
+                      u = a.find('complete').findtext('url')
+                      if best is None or ver > best[0]:
+                          best = (ver, u)
+          print('https://dl.google.com/android/repository/' + best[1])")
+          echo "Build tools: $url"
+          curl -fsSL "$url" -o bt.zip && unzip -q bt.zip -d bt
+          mv bt/*/ "$APP/Contents/Resources/build-tools"
+          ls "$APP/Contents/Resources/build-tools"
+          for t in aapt zipalign; do lipo -info "$APP/Contents/Resources/build-tools/$t" || file "$APP/Contents/Resources/build-tools/$t"; done
+
+      - name: Sign everything ad hoc (needed for Apple Silicon) and check the tools
+        run: |
+          set -e
+          find "$APP/Contents/Resources/python" "$APP/Contents/Resources/build-tools" -type f \( -perm -u+x -o -name "*.dylib" -o -name "*.so" \) \
+            -exec sh -c 'file "$1" | grep -q Mach-O && codesign --force -s - "$1" >/dev/null 2>&1 || true' _ {} \;
+          codesign --force --deep -s - "$APP" || true
+          R="$APP/Contents/Resources"
+          export JAVA_HOME="$R/jre/Contents/Home" PATH="$R/build-tools:$R/jre/Contents/Home/bin:$R/python/bin:$PATH"
+          aapt version
+          apksigner --version
+          (zipalign 2>&1 || true) | head -2
+          (keytool -help 2>&1 || true) | head -2
+          python3 - <<'EOF'
+          from tbcml.io.apk import Apk
+          for name in ("apktool", "apksigner", "zipalign", "keytool"):
+              res = getattr(Apk, f"is_{name}_installed")()
+              print(f"TBCML sees {name}:", bool(res), "" if res else getattr(res, "error", ""))
+              assert res, name
+          EOF
+
+      - name: Smoke test the page
+        run: |
+          set -e
+          R="$APP/Contents/Resources"
+          BC_LEVEL_CAPS_NO_BROWSER=1 BC_LEVEL_CAPS_PORT=8765 "$R/python/bin/python3" "$R/levelcap_app.py" &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8765/ | grep -q "Max all level caps"
+          curl -fsS -X POST http://127.0.0.1:8765/quit
+
+      - name: Zip and attach to the "mac-tool" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          zip="BC-Level-Caps-${{ matrix.label }}.zip"
+          (cd build && ditto -c -k --sequesterRsrc --keepParent "BC Level Caps.app" "../$zip")
+          ls -lh "$zip"
+          gh release view mac-tool >/dev/null 2>&1 || gh release create mac-tool --title "BC Level Caps (Mac)" \
+            --notes "Download the zip for your Mac (Apple Silicon = M1/M2/M3/M4, Intel = older Macs), unzip it, then right-click the app → Open." || true
+          gh release upload mac-tool "$zip" --clobber
