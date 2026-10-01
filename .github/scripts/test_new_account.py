@@ -66,6 +66,11 @@ def steps(preset: str, edits: dict, cc: str, data_dir: str, job_dir: str) -> Non
         say("  ✗ receiving it with its transfer codes FAILED:", body)
         return
     got = handler.save_file
+    def levels(sv):
+        owned = [c for c in sv.cats.cats if c.unlocked][:400]
+        top = max(owned, key=lambda c: c.upgrade.get_base() + c.upgrade.plus, default=None)
+        return f"highest level {top.upgrade.get_base()}+{top.upgrade.plus} (cat {top.id})" if top else "no cats"
+    say("  levels as made:", levels(made), "| after the server round trip:", levels(got))
     say(f"  ✓ received with the codes: inquiry {got.inquiry_code} (same: {got.inquiry_code == made.inquiry_code}), "
         f"password header: {handler.get_stored_password() is not None}")
     token = handler.get_auth_token_new(handler.get_stored_password() or "")
