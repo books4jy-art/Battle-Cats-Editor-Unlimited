@@ -99,8 +99,11 @@ jobs:
           (zipalign 2>&1 || true) | head -2
           (keytool -help 2>&1 || true) | head -2
           python3 - <<'EOF'
+          import os, tbcml
           from tbcml.io.apk import Apk
-          for name in ("apktool", "apksigner", "zipalign", "keytool"):
+          jar = tbcml.Path.get_lib("apktool.jar").to_str()
+          print("apktool.jar (not needed by the app):", jar, os.path.exists(jar))
+          for name in ("apksigner", "zipalign", "keytool"):
               res = getattr(Apk, f"is_{name}_installed")()
               print(f"TBCML sees {name}:", bool(res), "" if res else getattr(res, "error", ""))
               assert res, name

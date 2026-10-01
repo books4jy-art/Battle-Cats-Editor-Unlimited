@@ -68,7 +68,8 @@ def build(apk_path: Path, base: int, plus: int, cc_fallback: str, gv_fallback: s
 
     loader = tbcml.ModLoader(pkg.country_code, pkg.game_version)
     log("Unpacking the APK and loading the game data (this takes a few minutes)…")
-    loader.initialize_apk(apk=pkg, skip_signature_check=True)
+    # Only game data files change, so the APK is simply unzipped (no apktool / resource decoding needed).
+    loader.initialize_apk(apk=pkg, skip_signature_check=True, use_apktool=False, decode_resources=False)
     packs = loader.get_game_packs()
     total = tbcml.Cat.get_total_cats(packs)
     if not total:
@@ -92,7 +93,7 @@ def build(apk_path: Path, base: int, plus: int, cc_fallback: str, gv_fallback: s
         mod.add_modification(cat)
 
     log("Building and signing the modified APK (this takes a few minutes)…")
-    loader.apply(mod)
+    loader.apply(mod, use_apktool=False)
     final = Path(pkg.final_pkg_path.to_str())
     if not final.exists():
         raise RuntimeError("TBCML finished but the modified APK wasn't created.")
