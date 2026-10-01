@@ -81,6 +81,67 @@ def merge_bundle(path: Path) -> Path:
     return out
 
 
+def run_tool(cmd: list[str]) -> tuple[int, str]:
+    import subprocess
+
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+def python_align(src: Path, dst: Path) -> None:
+    """Same job as Android's zipalign -p 4: every uncompressed file starts on a 4-byte boundary
+    (native .so libraries on a 4096-byte page), padded with an alignment extra field."""
+    import struct
+    import zipfile
+
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", allowZip64=True) as zout:
+        for info in zin.infolist():
+            data = zin.read(info)
+            new = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+            new.compress_type = info.compress_type
+            new.external_attr = info.external_attr
+            new.create_system = info.create_system
+            if info.compress_type == zipfile.ZIP_STORED:
+                align = 4096 if info.filename.endswith(".so") else 4
+                header = 30 + len(info.filename.encode("utf-8"))
+                start = zout.fp.tell() + header + 6  # 6 = alignment field header + its 2-byte value
+                pad = (-start) % align
+                new.extra = struct.pack("<HHH", 0xD935, 2 + pad, align) + b"\0" * pad
+            zout.writestr(new, data)
+
+
+def align_apk(apk: Path) -> None:
+    aligned = apk.with_name(apk.stem + "-aligned.apk")
+    log("Aligning the APK (zipalign)…")
+    code, out = run_tool(["zipalign", "-f", "-p", "4", str(apk), str(aligned)])
+    if code != 0 or not aligned.exists():
+        log("  zipalign couldn't do it: " + (out.splitlines()[-1] if out else f"exit code {code}"))
+        log("  using the built-in aligner instead…")
+        python_align(apk, aligned)
+    shutil.move(str(aligned), str(apk))
+
+
+def sign_apk(apk: Path) -> None:
+    log("Signing the APK (apksigner)…")
+    keystore = Path.home() / "Documents" / "tbcml" / "tbcml.keystore"
+    keystore.parent.mkdir(parents=True, exist_ok=True)
+    password = "TBCML_CUSTOM_APK"
+    if not keystore.exists():
+        code, out = run_tool(["keytool", "-genkey", "-keystore", str(keystore), "-alias", "tbcml", "-keyalg", "RSA",
+                              "-keysize", "2048", "-validity", "10000", "-storepass", password, "-keypass", password,
+                              "-dname", "CN=BC Level Caps"])
+        if code != 0:
+            raise RuntimeError("Couldn't create a signing key: " + out[-400:])
+    code, out = run_tool(["apksigner", "sign", "--ks", str(keystore), "--ks-key-alias", "tbcml",
+                          "--ks-pass", f"pass:{password}", "--key-pass", f"pass:{password}", str(apk)])
+    if code != 0:
+        raise RuntimeError("Couldn't sign the APK: " + out[-600:])
+    code, out = run_tool(["apksigner", "verify", str(apk)])
+    if code != 0:
+        raise RuntimeError("The signed APK didn't pass apksigner's check: " + out[-600:])
+    log("  signed and verified")
+
+
 def build(apk_path: Path, base: int, plus: int, cc_fallback: str, gv_fallback: str) -> Path:
     import tbcml
 
@@ -127,11 +188,13 @@ def build(apk_path: Path, base: int, plus: int, cc_fallback: str, gv_fallback: s
         )
         mod.add_modification(cat)
 
-    log("Building and signing the modified APK (this takes a few minutes)…")
-    loader.apply(mod, use_apktool=False)
+    log("Building the modified APK (this takes a few minutes)…")
+    loader.apply(mod, use_apktool=False, sign=False, zip_align=False)  # aligned and signed below, with clear errors
     final = Path(pkg.final_pkg_path.to_str())
     if not final.exists():
         raise RuntimeError("TBCML finished but the modified APK wasn't created.")
+    align_apk(final)
+    sign_apk(final)
     downloads = Path.home() / "Downloads"
     downloads.mkdir(exist_ok=True)
     out = downloads / f"{apk_path.stem.replace('-merged', '')}-levelcaps-{base}+{plus}.apk"
