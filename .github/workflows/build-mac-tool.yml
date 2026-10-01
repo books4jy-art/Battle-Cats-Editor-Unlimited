@@ -52,7 +52,7 @@ jobs:
           curl -fsSL "$url" | tar -xz -C "$APP/Contents/Resources"
           PY="$APP/Contents/Resources/python/bin/python3"
           "$PY" -m pip install --quiet --upgrade pip
-          "$PY" -m pip install --quiet tbcml flask
+          "$PY" -m pip install --quiet "tbcml @ https://codeberg.org/fieryhenry/tbcml/archive/fb9bf36137e9a4456f1680e99ee46460a6e41133.zip" flask
           "$PY" -c "import tbcml, flask; print('TBCML', tbcml.__version__)"
 
       - name: Bundle a Java runtime (Temurin 17)
