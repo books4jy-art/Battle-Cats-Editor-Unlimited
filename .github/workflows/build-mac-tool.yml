@@ -30,6 +30,7 @@ jobs:
     timeout-minutes: 40
     env:
       APP: "build/BC Level Caps.app"
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -86,12 +87,9 @@ jobs:
           ls "$APP/Contents/Resources/build-tools"
           for t in aapt zipalign; do lipo -info "$APP/Contents/Resources/build-tools/$t" || file "$APP/Contents/Resources/build-tools/$t"; done
 
-      - name: Sign everything ad hoc (needed for Apple Silicon) and check the tools
+      - name: Check the tools
         run: |
           set -e
-          find "$APP/Contents/Resources/python" "$APP/Contents/Resources/build-tools" -type f \( -perm -u+x -o -name "*.dylib" -o -name "*.so" \) \
-            -exec sh -c 'file "$1" | grep -q Mach-O && codesign --force -s - "$1" >/dev/null 2>&1 || true' _ {} \;
-          codesign --force --deep -s - "$APP" || true
           R="$APP/Contents/Resources"
           export JAVA_HOME="$R/jre/Contents/Home" PATH="$R/build-tools:$R/jre/Contents/Home/bin:$R/python/bin:$PATH"
           aapt version
@@ -117,6 +115,15 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8765/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8765/ | grep -q "Max all level caps"
           curl -fsS -X POST http://127.0.0.1:8765/quit
+
+      - name: Sign the whole app ad hoc (last, so nothing changes it afterwards) and verify
+        run: |
+          set -e
+          find "$APP" -name "__pycache__" -prune -newer "$APP/Contents/Resources/levelcap_app.py" -print
+          find "$APP/Contents/Resources" -type f \( -perm -u+x -o -name "*.dylib" -o -name "*.so" \) \
+            -exec sh -c 'file "$1" | grep -q Mach-O && codesign --force -s - "$1" >/dev/null 2>&1 || true' _ {} \;
+          codesign --force --deep -s - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Zip and attach to the "mac-tool" release
         env:

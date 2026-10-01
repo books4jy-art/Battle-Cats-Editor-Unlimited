@@ -12,4 +12,7 @@ xattr -dr com.apple.quarantine "$HERE/.." 2>/dev/null || true
 export JAVA_HOME="$RES/jre/Contents/Home"
 export PATH="$RES/build-tools:$JAVA_HOME/bin:$RES/python/bin:$PATH"
 export PYTHONNOUSERSITE=1
+# Keep Python's cache files out of the app, so its signature stays valid.
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPYCACHEPREFIX="$HOME/Library/Caches/BC Level Caps"
 exec "$RES/python/bin/python3" "$RES/levelcap_app.py" >>"$LOG" 2>&1
