@@ -97,7 +97,9 @@ jobs:
           echo "APKEditor: $url"
           mkdir -p "$APP/Contents/Resources/tools"
           curl -fsSL "$url" -o "$APP/Contents/Resources/tools/APKEditor.jar"
-          "$APP/Contents/Resources/jre/Contents/Home/bin/java" -jar "$APP/Contents/Resources/tools/APKEditor.jar" -version
+          # APKEditor prints its version but exits with code 2, so check the text instead
+          ("$APP/Contents/Resources/jre/Contents/Home/bin/java" -jar "$APP/Contents/Resources/tools/APKEditor.jar" -version 2>&1 || true) | tee apkeditor.txt
+          grep -q "APKEditor version" apkeditor.txt
 
       - name: Check the tools
         run: |
