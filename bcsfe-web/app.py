@@ -476,7 +476,8 @@ def main() -> None:
         app.run(host=HOST, port=PORT)
         return
     log.info("BCSFE web editor running on http://localhost:%s", PORT)
-    serve(app, host=HOST, port=PORT, threads=8)
+    # Render passes the visitor's address in X-Forwarded-For; waitress would otherwise remove it.
+    serve(app, host=HOST, port=PORT, threads=8, clear_untrusted_proxy_headers=False)
 
 
 if __name__ == "__main__":
