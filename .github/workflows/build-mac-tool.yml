@@ -87,6 +87,18 @@ jobs:
           ls "$APP/Contents/Resources/build-tools"
           for t in aapt zipalign; do lipo -info "$APP/Contents/Resources/build-tools/$t" || file "$APP/Contents/Resources/build-tools/$t"; done
 
+      - name: Bundle APKEditor (merges .apkm / .xapk / .apks bundles into one APK)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          url=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/REAndroid/APKEditor/releases/latest \
+            | python3 -c "import json,sys; a=[x['browser_download_url'] for x in json.load(sys.stdin)['assets'] if x['name'].endswith('.jar')]; print(a[0])")
+          echo "APKEditor: $url"
+          mkdir -p "$APP/Contents/Resources/tools"
+          curl -fsSL "$url" -o "$APP/Contents/Resources/tools/APKEditor.jar"
+          "$APP/Contents/Resources/jre/Contents/Home/bin/java" -jar "$APP/Contents/Resources/tools/APKEditor.jar" -version
+
       - name: Check the tools
         run: |
           set -e

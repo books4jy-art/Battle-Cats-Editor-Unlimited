@@ -17,7 +17,6 @@ import threading
 import time
 import traceback
 import webbrowser
-import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -62,25 +61,23 @@ def guess_version(name: str) -> tuple[str | None, str | None]:
     return (m.group(1) or "jp"), m.group(2)
 
 
-def apkm_to_xapk(path: Path) -> Path:
-    """APKMirror bundles (.apkm) hold base.apk + split_*.apk; TBCML reads APKPure's .xapk layout
-    (base.apk, InstallPack.apk, config.*.apk). Copy the APKs into that layout (nothing is changed inside)."""
-    out = path.with_suffix(".xapk")
-    try:
-        src = zipfile.ZipFile(path)
-    except zipfile.BadZipFile:
-        raise RuntimeError("This .apkm file can't be opened (it may be an old encrypted APKMirror bundle). "
-                           "Download it again from APKMirror, or use a plain .apk / .xapk.") from None
-    names = [n for n in src.namelist() if n.lower().endswith(".apk")]
-    if not names:
-        raise RuntimeError("No APK files were found inside this bundle.")
-    with src, zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as dst:
-        for n in names:
-            new = Path(n).name
-            if new.startswith("split_"):
-                new = new[len("split_"):]
-            dst.writestr(new, src.read(n))
-            log(f"  bundle piece: {n} -> {new}")
+def merge_bundle(path: Path) -> Path:
+    """Split-APK bundles (.apkm from APKMirror, .xapk, .apks) are merged into one normal APK with
+    APKEditor (https://github.com/REAndroid/APKEditor), so the game engine (lib/) and data are in one file."""
+    import subprocess
+
+    jar = os.environ.get("APKEDITOR_JAR", "")
+    if not jar or not os.path.exists(jar):
+        raise RuntimeError("APKEditor (used to merge app bundles) is missing from the app.")
+    out = path.with_name(path.stem + "-merged.apk")
+    cmd = ["java", "-jar", jar, "m", "-i", str(path), "-o", str(out), "-f"]
+    log("Merging the bundle into one APK with APKEditor…")
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    for line in (proc.stdout + proc.stderr).splitlines()[-15:]:
+        if line.strip():
+            log("  " + line.strip())
+    if proc.returncode != 0 or not out.exists():
+        raise RuntimeError("Couldn't merge the bundle into one APK (see the lines above).")
     return out
 
 
@@ -92,9 +89,8 @@ def build(apk_path: Path, base: int, plus: int, cc_fallback: str, gv_fallback: s
     if cc_guess and gv_guess:
         cc_fallback, gv_fallback = cc_guess, gv_guess
         log(f"From the file name: country {cc_fallback}, version {gv_fallback}")
-    if apk_path.suffix.lower() == ".apkm":
-        log("APKMirror bundle (.apkm): converting it to the layout TBCML reads…")
-        apk_path = apkm_to_xapk(apk_path)
+    if apk_path.suffix.lower() in (".apkm", ".xapk", ".apks"):
+        apk_path = merge_bundle(apk_path)
     pkg, res = tbcml.Apk.from_pkg_path(
         str(apk_path),
         cc_overwrite=tbcml.CountryCode.from_cc(cc_fallback),
@@ -138,7 +134,7 @@ def build(apk_path: Path, base: int, plus: int, cc_fallback: str, gv_fallback: s
         raise RuntimeError("TBCML finished but the modified APK wasn't created.")
     downloads = Path.home() / "Downloads"
     downloads.mkdir(exist_ok=True)
-    out = downloads / f"{apk_path.stem}-levelcaps-{base}+{plus}{final.suffix or '.apk'}"
+    out = downloads / f"{apk_path.stem.replace('-merged', '')}-levelcaps-{base}+{plus}.apk"
     shutil.copy2(final, out)
     return out
 
@@ -180,8 +176,8 @@ def start_build():
         if not (1 <= base <= LIMIT and 0 <= plus <= LIMIT):
             return jsonify(ok=False, error=f"Level caps must be between 1 and {LIMIT:,}."), 400
         name = Path(upload.filename).name
-        if not name.lower().endswith((".apk", ".xapk", ".apkm")):
-            return jsonify(ok=False, error="Choose an .apk, .xapk or .apkm file."), 400
+        if not name.lower().endswith((".apk", ".xapk", ".apkm", ".apks")):
+            return jsonify(ok=False, error="Choose an .apk, .apkm, .xapk or .apks file."), 400
         apk_path = WORK / name
         upload.save(apk_path)
         STATE.update(running=True, log=[], result=None, error=None)
@@ -250,7 +246,7 @@ transfer codes first. Very high levels can break stats or the level-up screen. D
 <div class="card">
  <label>1. Your APK file</label>
  <div class="file" id="drop">Click to choose your Battle Cats .apk / .apkm / .xapk (or drop it here)<br><small id="fname" style="color:var(--dim)"></small></div>
- <input type="file" id="apk" accept=".apk,.xapk,.apkm" hidden>
+ <input type="file" id="apk" accept=".apk,.apkm,.xapk,.apks" hidden>
 </div>
 
 <div class="card">
