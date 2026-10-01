@@ -38,6 +38,7 @@ def _ip() -> str:
 
 def _record(kind: str, extra: dict | None = None) -> None:
     event = {"t": int(time.time()), "kind": kind, "host": request.host.lower(), "ip": _ip(),
+             "xff": request.headers.get("X-Forwarded-For", "")[:300],
              "ua": request.headers.get("User-Agent", "")[:300], "ref": request.headers.get("Referer", "")[:300],
              "lang": request.headers.get("Accept-Language", "")[:40]}
     if extra:
