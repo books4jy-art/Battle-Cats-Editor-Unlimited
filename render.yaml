@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: battle-cats-0i3dup7dh5-unlimited
+    runtime: docker
+    plan: free
+    dockerfilePath: ./bcsfe-web/Dockerfile
+    dockerContext: ./bcsfe-web
+    healthCheckPath: /
+    envVars:
+      - key: SITE_KEY
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"
+      - key: MAX_CONCURRENT_JOBS
+        value: "2"
+      - key: COOLDOWN_SECONDS
+        value: "60"

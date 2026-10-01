@@ -1,0 +1,16 @@
+# Render Blueprint: lets Render set up the site automatically from this repo.
+services:
+  - type: web
+    name: battle-cats-save-editor
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: SITE_KEY
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"
+      - key: MAX_CONCURRENT_JOBS
+        value: "2"
+      - key: COOLDOWN_SECONDS
+        value: "60"

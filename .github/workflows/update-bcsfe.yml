@@ -1,0 +1,71 @@
+# Keeps the site on BCSFE's newest code so it can read saves from new game updates.
+# Once a day: if BCSFE has a newer commit, install it and test the site with it. If the
+# test passes, commit the new pin to main (Render then redeploys); if not, open an issue.
+name: Update BCSFE
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # every day at 03:17 UTC
+  workflow_dispatch:        # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: update-bcsfe
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Look for a newer BCSFE
+        id: find
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/find_bcsfe_update.py
+
+      - name: Test the site with it
+        if: steps.find.outputs.changed == 'true'
+        run: |
+          pip install -r bcsfe-web/requirements.txt
+          python .github/scripts/check_site.py
+
+      - name: Put it live
+        if: steps.find.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update BCSFE to ${NEW::10}" -m "Tested automatically by .github/workflows/update-bcsfe.yml."
+          git push
+        env:
+          NEW: ${{ steps.find.outputs.new }}
+
+      - name: Report a failed update
+        if: failure() && steps.find.outputs.changed == 'true'
+        uses: actions/github-script@v8
+        env:
+          NEW: ${{ steps.find.outputs.new }}
+        with:
+          script: |
+            const title = `BCSFE update ${process.env.NEW.slice(0, 10)} failed its test`;
+            const open = await github.rest.issues.listForRepo({ ...context.repo, state: "open" });
+            if (open.data.some(i => i.title === title)) return;
+            await github.rest.issues.create({ ...context.repo, title, body:
+              `The daily update found a newer BCSFE (${process.env.NEW}) but the site test failed, ` +
+              `so the site stays on its current version.\n\nDetails: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}` });
+
+      # GitHub pauses scheduled workflows after 60 days without commits; re-enabling it daily keeps it running.
+      - name: Keep this schedule alive
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/update-bcsfe.yml/enable" || true

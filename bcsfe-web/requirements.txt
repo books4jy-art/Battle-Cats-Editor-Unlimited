@@ -1,0 +1,5 @@
+flask>=3.0
+waitress>=3.0
+python-dotenv>=1.0
+# BCSFE's latest code (3.6.0 + fixes up to 2026-08-18), pinned to an exact commit.
+bcsfe @ https://github.com/fieryhenry/BCSFE-Python/archive/85fb94cbf00c6a74dbef58932610fb94ec8f7495.zip
