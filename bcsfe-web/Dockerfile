@@ -11,7 +11,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py worker.py extras.py gate.py passwords.py shield.py unlimited.py stage_shapes.json.gz ./
+COPY app.py traffic.py worker.py extras.py gate.py passwords.py shield.py unlimited.py stage_shapes.json.gz ./
 COPY new_account_templates ./new_account_templates
 COPY --from=scramble /build/static ./static
 ENV BCSFE_DATA_DIR=/tmp/bcsfe-data PORT=8000 TRUST_PROXY=1

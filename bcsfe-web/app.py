@@ -26,6 +26,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 import extras
 import gate
+import traffic
 
 try:
     from dotenv import load_dotenv
@@ -64,6 +65,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 app = Flask(__name__, static_folder=str(HERE / "static"), static_url_path="/static")
 gate.install(app)  # today's password from the password maker is needed for everything
+traffic.install(app)  # visit/edit counts for the password maker's Traffic page
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # save files are ~100 KB–1 MB
 
 job_slots = threading.BoundedSemaphore(MAX_CONCURRENT_JOBS)
