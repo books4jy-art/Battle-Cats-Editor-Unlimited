@@ -244,8 +244,9 @@ def parse_edits(form) -> dict[str, Any] | str:
         return 'Type a level for the characters to level up.'
 
     # Catfruit/seeds, behemoth stones/gems, catseyes: "index:amount,index:amount".
-    for group, limit in (("fruit", 998), ("stone", 998), ("eye", 9999), ("battle", 9999), ("drink", 9999), ("chest", 9999),
-                         ("material", 9999), ("medal", 9999)):
+    # Unlimited: amounts go up to what the save can hold (the worker caps each list at its own slot size).
+    for group, limit in (("fruit", I32_MAX), ("stone", I32_MAX), ("eye", I32_MAX), ("battle", I32_MAX), ("drink", I32_MAX),
+                         ("chest", I32_MAX), ("material", I32_MAX), ("medal", I32_MAX)):
         raw = (form.get(f"items_{group}") or "").replace(" ", "")
         if not raw:
             continue
@@ -263,8 +264,8 @@ def parse_edits(form) -> dict[str, Any] | str:
         amount = (form.get("orb_count") or "").strip().replace(",", "")
         if not amount:
             return 'Type how many of each orb you want.'
-        if not amount.isdigit() or int(amount) > 998:
-            return 'Orb amount must be a number from 0 to 998.'
+        if not amount.isdigit() or int(amount) > 32767:
+            return 'Orb amount must be a number from 0 to 32,767.'
         spec: dict[str, Any] = {"count": int(amount), "all": orb_mode == "all"}
         if orb_mode == "filter":
             for key, limit in (("grades", 10), ("effects", 100)):
