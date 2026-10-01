@@ -1,0 +1,36 @@
+# Makes test accounts like the New account tab and checks them the way the game does
+# (receive with the transfer codes, log in, save key, managed items). Prints fresh codes for each.
+name: Test new accounts
+
+on:
+  workflow_dispatch:
+    inputs:
+      cc:
+        description: "Country: kr, en, jp or tw"
+        default: kr
+      variants:
+        description: "Comma-separated: rookie, mythic, mythic+limited, mythic+limited+dummy, unlimited (empty = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Test new accounts
+        env:
+          CC: ${{ inputs.cc }}
+          VARIANTS: ${{ inputs.variants }}
+        run: |
+          pip install -q -r bcsfe-web/requirements.txt
+          python .github/scripts/test_new_account.py
