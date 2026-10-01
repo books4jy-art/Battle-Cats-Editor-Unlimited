@@ -49,6 +49,11 @@ OPEN_PATHS = {"/gate", "/robots.txt"}
 
 def _ip() -> str:
     if TRUST_PROXY:
+        # Cloudflare (in front of Render) sets CF-Connecting-IP to the real address; the first
+        # X-Forwarded-For entry is whatever the visitor's browser sent, so it can be faked.
+        real = request.headers.get("CF-Connecting-IP") or request.headers.get("True-Client-IP")
+        if real:
+            return real.strip()
         fwd = request.headers.get("X-Forwarded-For", "")
         if fwd:
             return fwd.split(",")[0].strip()

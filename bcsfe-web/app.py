@@ -76,6 +76,11 @@ last_run: dict[str, float] = {}
 
 def client_ip() -> str:
     if TRUST_PROXY:
+        # Cloudflare (in front of Render) sets CF-Connecting-IP to the real address; the first
+        # X-Forwarded-For entry is whatever the visitor's browser sent, so it can be faked.
+        real = request.headers.get("CF-Connecting-IP") or request.headers.get("True-Client-IP")
+        if real:
+            return real.strip()
         fwd = request.headers.get("X-Forwarded-For", "")
         if fwd:
             return fwd.split(",")[0].strip()
@@ -465,31 +470,6 @@ def cancel():
 @app.errorhandler(413)
 def too_large(_):
     return fail("That file is too big to be a save file.", 413)
-
-
-# TEMPORARY (remove after checking): how Render builds the address headers. Shows only counts and
-# yes/no answers, never an address.
-gate.OPEN_PATHS.add("/hdrcheck")
-
-
-@app.get("/hdrcheck")
-def hdrcheck():
-    import ipaddress
-
-    def kind(v: str) -> str:
-        try:
-            a = ipaddress.ip_address(v.strip())
-            return "public" if a.is_global else "private"
-        except ValueError:
-            return "other"
-
-    xff = [x.strip() for x in request.headers.get("X-Forwarded-For", "").split(",") if x.strip()]
-    out = {"xff": [kind(x) for x in xff], "remote": kind(request.remote_addr or "")}
-    for h in ("True-Client-IP", "CF-Connecting-IP", "X-Real-IP", "Fly-Client-IP", "Forwarded", "X-Envoy-External-Address"):
-        v = request.headers.get(h)
-        if v:
-            out[h] = {"kind": kind(v), "same_as_xff": [i for i, x in enumerate(xff) if x == v.strip()]}
-    return jsonify(out)
 
 
 def main() -> None:

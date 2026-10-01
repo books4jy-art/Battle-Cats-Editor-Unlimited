@@ -32,6 +32,9 @@ _lock = threading.Lock()
 
 
 def _ip() -> str:
+    real = request.headers.get("CF-Connecting-IP") or request.headers.get("True-Client-IP")  # set by Cloudflare: can't be faked
+    if real:
+        return real.strip()
     fwd = request.headers.get("X-Forwarded-For", "")
     return fwd.split(",")[0].strip() if fwd else (request.remote_addr or "")
 
